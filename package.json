@@ -1,0 +1,23 @@
+{
+  "name": "filereader_mcp",
+  "version": "1.0.0",
+  "description": "My first basic MCP server for reading and performing other tasks on files.",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node build/index.js"
+  },
+  "author": "Harshit verma",
+  "license": "ISC",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "dotenv": "^17.4.2",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^6.0.3"
+  }
+}
