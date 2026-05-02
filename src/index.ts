@@ -16,6 +16,170 @@ const server = new McpServer({
     version: "1.0.0"
 });
 
+
+/**
+ * Resource to provide an index of files in the allowed folder.
+ * Retrieves a list of all files (not directories) from the ALLOWED_FOLDER environment variable path.
+ * @param {URL} uri - The URI for the resource request.
+ * @returns {Object} An object with contents array containing the file list or an error message.
+ */
+server.resource(
+    "folder-index",
+    "ALLOWED_FOLDER",
+    async (uri) => {
+        try {
+            const entries = await readdir(ALLOWED_FOLDER, { withFileTypes: true });
+            const files = entries.filter((e) => e.isFile()).map((e) => e.name);
+            const indexText =
+                files.length > 0
+                    ? `Files currently in the folder (${files.length} total):\n\n${files.join("\n")}`
+                    : "The folder is currently empty.";
+            return {
+                contents: [{ uri: uri.href, mimeType: "text/plain", text: indexText }],
+            };
+        } catch {
+            return {
+                contents: [{ uri: uri.href, mimeType: "text/plain", text: "Could not read folder index." }],
+            };
+        }
+    }
+);
+
+
+/**
+ * Resource to read the contents of a specific file by name.
+ * Reads the entire content of the specified file from the ALLOWED_FOLDER.
+ * @param {URL} uri - The URI containing the filename in the pathname.
+ * @returns {Object} An object with contents array containing the file contents or an error message.
+ */
+server.resource(
+    "file://{filename}",
+    "Read contents of a file by name",
+    async (uri: URL) => {
+        const filename = uri.pathname.slice(1);
+        try {
+            const content = await readFile(join(ALLOWED_FOLDER, filename), "utf-8");
+
+            return {
+                contents: [{
+                    uri: `file://${filename}`,
+                    text: content || "File is empty"
+                }]
+            };
+        } catch (error: any) {
+            return {
+                contents: [{
+                    uri: `file://${filename}`,
+                    text: `Error reading file: ${error.message}`
+                }]
+            };
+        }
+    }
+);
+
+
+/**
+ * Prompt to summarize a file in bullet points with action items.
+ * Reads the specified file and generates a summary in clear bullet points (maximum 6) plus any identified action items or tasks.
+ * @param {string} filename - The name of the file to summarize, e.g. notes.txt.
+ * @returns {Object} An object with messages array containing the prompt for summarization or an error message.
+ */
+server.prompt(
+    "summarise-file",
+    "Read a file and summarise it in bullet points with action items",
+    {
+        filename: z.string().describe("Name of the file to summarise, e.g. notes.txt"),
+    },
+    async ({ filename }) => {
+        try {
+            const content = await readFile(join(ALLOWED_FOLDER, filename), "utf-8");
+            return {
+                messages: [{
+                    role: "user",
+                    content: {
+                        type: "text",
+                        text: `Please read the following file and do two things:
+
+1. Summarise the content in clear bullet points (maximum 6 bullets)
+2. List any action items or tasks you can identify
+Keep the tone professional and concise.
+File name: ${filename}
+File content: ${content}`,
+                    },
+                },],
+            };
+        } catch {
+            return {
+                messages: [{
+                    role: "user",
+                    content: {
+                        type: "text",
+                        text: `Could not read "${filename}" for summarisation. Does the file exist?`,
+                    },
+                },],
+            };
+        }
+    }
+);
+
+
+/**
+ * Prompt to review a file based on the specified review type.
+ * Reads the specified file and provides a detailed review focusing on grammar, clarity, structure, or code quality.
+ * @param {string} filename - The name of the file to review, e.g. plan.txt.
+ * @param {string} review_type - The type of review: grammar, clarity, structure, or code.
+ * @returns {Object} An object with messages array containing the prompt for review or an error message.
+ */
+server.prompt(
+    "review-file",
+    "Read a file and give a detailed review based on the review type",
+    {
+        filename: z.string().describe("Name of the file to review, e.g. plan.txt"),
+        review_type: z
+            .enum(["grammar", "clarity", "structure", "code"])
+            .describe("Type of review: grammar, clarity, structure, or code"),
+    },
+    async ({ filename, review_type }) => {
+        try {
+            const content = await readFile(join(ALLOWED_FOLDER, filename), "utf-8");
+            const instructions: Record<string, string> = {
+                grammar:
+                    "Review the following text for grammar, spelling, and punctuation mistakes. List every issue you find with the line or sentence it appears in, and suggest a correction for each.",
+                clarity:
+                    "Review the following text for clarity and readability. Identify sentences that are confusing or hard to understand, explain why, and suggest a clearer version.",
+                structure:
+                    "Review the following text for structure and organisation. Comment on how well the ideas flow, whether headings and sections make sense, and suggest improvements.",
+                code:
+                    "Review the following code. Check for bugs, poor naming, missing error handling, performance issues, and style problems. List each issue with the line number if possible and suggest a fix.",
+            };
+            return {
+                messages: [{
+                    role: "user",
+                    content: {
+                        type: "text",
+                        text: `${instructions[review_type]}
+File name: ${filename}
+Content:${content}`,
+                    },
+                },
+                ],
+            };
+        } catch {
+            return {
+                messages: [{
+                    role: "user",
+                    content: {
+                        type: "text",
+                        text: `Could not read "${filename}" for review. Does the file exist?`,
+                    },
+                },
+                ],
+            };
+        }
+    }
+);
+
+
 /**
  * Tool to list all files in the allowed folder.
  * Retrieves a list of all files (not directories) from the ALLOWED_FOLDER environment variable path.
@@ -266,10 +430,7 @@ RESOURCES (data always available as context)
 • folder://index
   What: Live list of all files in the folder
  
-• file://{filename}
-  What: Content of any file by name
-  e.g.: file://notes.txt
- 
+
 PROMPTS (saved instruction templates)
 ───────────────────────────────────────
 • summarise-file
@@ -284,6 +445,7 @@ PROMPTS (saved instruction templates)
         return { content: [{ type: "text", text }] };
     }
 );
+
 
 
 async function main() {
